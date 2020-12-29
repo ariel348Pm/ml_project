@@ -9,6 +9,10 @@ from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn.ensemble import VotingClassifier
 from sklearn.neighbors import KNeighborsClassifier
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+
 
 
 def load_data():
@@ -40,6 +44,19 @@ def get_age(age):
     if time == "day" or time == "days":
         return float(num) / (4 * 7)
 
+def simplify_age(age):
+    if age < 6:
+        return 6
+    if age < 12:
+        return 12
+    if age < 36:
+        return 36
+    if age < 62:
+        return 62
+    if age < 96:
+        return 96
+    else:
+        return 100
 
 def get_name_length(name):
     return len(name)
@@ -71,11 +88,58 @@ def is_male(sex):
         return 0
 
 
+def hair_length(breed):
+    if breed.find("Shorthair") != -1:
+        return 1
+    if breed.find("Longhair") != -1:
+        return 2
+    return 1
+
+
+def aggresive(breed):
+    if breed.find("Pit Bull") != -1:
+        return 6
+    if breed.find("Rottweiler") != -1:
+        return 4
+    if breed.find("Shepherd") != -1:
+        return 2
+    return 0
+
+
 def simplify_breed(breed):
     breed = breed.split("/")[0]
     if breed.endswith(' Mix'):
         breed = breed[:-4]
+    # for b in ["Sheepdog", "Pit Bull", "Terrier", "Schnauzer", "Retriever", "Shepherd", "Chihuahua", "Collie"]:
+    #     if breed.find(b) != -1:
+    #         return b
     return breed
+
+
+def name_pop(name, count):
+    if pd.isnull(name):
+        return -1
+    if count[name] > 4:
+        2
+    return 1
+
+
+def breed_pop(breed, breed_popularity):
+    for i, p in enumerate(breed_popularity["BREED"]):
+        if p.find(breed) != -1:
+            if breed_popularity["2019"][i] < 25:
+                return 2
+            else:
+                return 1
+    return 0
+
+
+def colors(color):
+    if color.find("Tricolor") != -1:
+        return 3
+    if color.find("/") != -1:
+        return 2
+    return 1
 
 
 def encode_dates(df, hot_encode):
@@ -117,7 +181,11 @@ def encode_features(df_in, hot_encode):
     df = df_in.copy()
     # Encode has name
     hasname = df.Name.isnull().astype(int)
-    # Encode name length
+    # Encode name
+    counts = df.Name.value_counts()
+    name_popularity = df.Name.apply(name_pop, args=(counts,))
+    name_popularity.name = "Name Popularity"
+
     names_length = df.Name
     names_length[df.Name.notna()] = df.Name[df.Name.notna()].apply(get_name_length)
     names_length[df.Name.isnull()] = -1
@@ -131,7 +199,11 @@ def encode_features(df_in, hot_encode):
     ages[df.AgeuponOutcome.notna()] = df.AgeuponOutcome[df.AgeuponOutcome.notna()].apply(get_age)
     mean_age = ages[df.AgeuponOutcome.notna()].mean()
     ages[df.AgeuponOutcome.isnull()] = mean_age
+    ages.name = "Age"
+    # ages = ages.apply(simplify_age)
 
+    num_colors = df["Color"].apply(colors)
+    num_colors.name = "Num Colors"
     # Encode sex, breed and color
     df['SexuponOutcome'][df['SexuponOutcome'].isnull()] = 'Unknown'
     df['Color'] = df['Color'].apply(simplify_color)
@@ -139,12 +211,28 @@ def encode_features(df_in, hot_encode):
 
     animal_data = encode_breed_color(df)
 
+    breed_popularity = df['Breed'].apply(breed_pop, args=(pd.read_csv("breeds.csv", sep="\t"),))
+    breed_popularity.name = "Breed Popularity"
+
     mix = df['Breed'].copy().apply(is_mix)
     spayed = df['SexuponOutcome'].apply(is_spayed_neutered)
+    spayed.name = "Spayed"
     male = df['SexuponOutcome'].apply(is_male)
+    male.name = "Sex"
+    aggressiveness = df['Breed'].apply(aggresive)
+    aggressiveness.name = "Aggressiveness"
+    hair = df['Breed'].apply(hair_length)
+    hair.name = "Hair"
 
-    res = pd.concat([hasname, names_length, date_data, ages, animal_data, spayed, male, mix], axis=1)
-    return res.drop(["Breed", "Color", "NamesLength", "Year", "Day"], axis=1)
+    shared_dates = df.groupby("DateTime")["DateTime"].transform('count')
+    shared_dates.name = "Shared dates"
+
+    columns = ['numColors']
+
+    res = pd.concat([hasname, date_data, ages, animal_data, spayed, male, mix, aggressiveness,
+                     breed_popularity, name_popularity, shared_dates, num_colors], axis=1)
+    # return res.drop(["Breed", "Color", "NamesLength", "Year", "Day"], axis=1)
+    return res
 
 
 def encodeLabels(df):
@@ -241,7 +329,13 @@ for animal_type in animals:
                                                                clf_specification[animal_type], animal_type)
     prediction[animal_type] = pred(clf, test_features)
 
+    importance = clf.feature_importances_
+    plt.figure(figsize=(20, 10))
+    sns.barplot(y=train_features.columns, x=importance, ci=None)
+    plt.savefig(animal_type)
+
 final_score(loss["Dog"], loss["Cat"], num_animal["Dog"], num_animal["Cat"])
 animals_id = get_id(test, animals)
 path = "results.csv"
 write_results(animals_id, prediction, path)
+
